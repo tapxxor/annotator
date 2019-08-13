@@ -1,0 +1,11 @@
+groups:
+- name: Scraping
+  rules:
+  - alert: Instance is down
+    expr: up == 0
+    for: 10s
+    labels:
+      severity: page
+    annotations:
+      summary: Instance is down
+      Description: Job {{ $labels.job }} scraping {{ $labels.instance }} is down

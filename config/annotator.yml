@@ -1,0 +1,50 @@
+server:
+
+  settings:
+
+    # expose proemetheus metrics
+    metrics: true
+
+    #port exposing metrics
+    port: 5001
+    
+    # path exposing metrics
+    path: '/metrics'
+    
+    # grafana external URL
+    grafanaURL: 'http://192.168.2.9:3000'
+    
+    # grafana API key to include to requests
+    apiKey: 'eyJrIjoiYVZGZkJ4VktxRjRzcDBDbkZNY0JtYW5RWW4zZ3JrTEgiLCJuIjoiYW5ub3RhdG9yIiwiaWQiOjF9'
+
+    alertsPath: '/tmp/annotator/'
+
+    sqliteHome: '/home/tapxxor/go/src/annotator/db'
+
+  # define what we will the description and tags used for every alert with name = alertname
+  annotations:
+    
+    - name: 'Instance is down'
+      # from labels
+      tags:
+        - job
+        - alertname
+
+receiver:
+
+  settings:
+
+    # expose proemetheus metrics
+    metrics: true
+
+    #port exposing metrics
+    #port: 5000
+    
+    # path exposing metrics
+    path: '/metrics'
+
+    # path to save alerts (JSON) in file
+    data: '/tmp/annotator'
+    
+
+
