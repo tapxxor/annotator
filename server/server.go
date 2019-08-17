@@ -2,51 +2,17 @@ package main
 
 import (
 	"annotator/db"
-	"annotator/lib"
-	"database/sql"
-	"encoding/json"
+	"annotator/server/lib"
+	"annotator/server/routines"
 	"flag"
 	"fmt"
 	"log"
-	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"path/filepath"
-	"strconv"
-	"sync"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-
-const (
-	annotationsAPI string = "/api/annotations"
-)
-
-var (
-	config                lib.ServerConf
-	grafanaAPIAnnotations lib.AnnotationsResponse
-	regions               lib.Regions
-	configFile            *string
-	grafanaAnnotationsURL string
-	sqliteHome            string
-	sqliteDB              string
-	alertsPath            string
-	alertsFiringPath      string
-	alertsResolvedPath    string
-	alertsPaths           map[string]string
-	c                     *sql.DB
-	mu                    sync.Mutex
-	ch                    = make(chan string)
-)
-
-func serveMetrics() {
-	http.Handle("/metrics", promhttp.Handler())
-	log.Printf("Start exposing prometheus metrics on port %d\n", config.Server.Settings.Port)
-	log.Fatal(http.ListenAndServe("0.0.0.0:"+strconv.Itoa(int(config.Server.Settings.Port)), nil))
-}
 
 func init() {
 
@@ -59,218 +25,73 @@ func init() {
 	log.SetFlags(log.LUTC | log.Lshortfile | log.Lmicroseconds | log.Ltime | log.Ldate)
 
 	// read flags
-	configFile = flag.String("config", "/etc/annotator/annotator.yml", "annotator config file")
+	lib.ConfigFile = flag.String("config", "/etc/annotator/annotator.yml", "annotator config file")
 	flag.Parse()
 
 	// read configuration
-	log.Printf("Loading configuration from %s\n", *configFile)
-	if err := config.Fread(configFile); err != nil {
-		log.Fatalf("Error in reading configuration file %s: %v", *configFile, err)
+	log.Printf("Loading configuration from %s\n", *(lib.ConfigFile))
+	if err := lib.Config.Fread(lib.ConfigFile); err != nil {
+		log.Fatalf("Error in reading configuration file %s: %v", *(lib.ConfigFile), err)
 	}
 
 	// check configuration
-	if err := config.Validate(); err != nil {
+	if err := lib.Config.Validate(); err != nil {
 		log.Fatalf("Configuration checks failed: %v", err)
 	}
 
 	// set application variables
-	u, err := url.Parse(config.Server.Settings.GrafanaURL)
+	u, err := url.Parse(lib.Config.Server.Settings.GrafanaURL)
 	if err != nil {
-		log.Fatalf("Error in parsing url %s: %v", config.Server.Settings.GrafanaURL, err)
+		log.Fatalf("Error in parsing url %s: %v", lib.Config.Server.Settings.GrafanaURL, err)
 	}
 
-	u.Path = path.Join(u.Path, annotationsAPI)
-	grafanaAnnotationsURL = u.String()
-	sqliteHome = config.Server.Settings.SqliteHome
-	sqliteDB = filepath.Join(sqliteHome, "annotations.db")
-	alertsPath = config.Server.Settings.AlertsPath
-	alertsFiringPath = filepath.Join(alertsPath, "firing")
-	alertsResolvedPath = filepath.Join(alertsPath, "resolved")
-	alertsPaths = map[string]string{"firing": alertsFiringPath, "resolved": alertsResolvedPath}
+	u.Path = path.Join(u.Path, lib.AnnotationsAPI)
+	lib.GrafanaAnnotationsURL = u.String()
+	lib.SqliteHome = lib.Config.Server.Settings.SqliteHome
+	lib.SqliteDB = filepath.Join(lib.SqliteHome, "annotations.db")
+	lib.AlertsPath = lib.Config.Server.Settings.AlertsPath
+	lib.AlertsFiringPath = filepath.Join(lib.AlertsPath, "firing")
+	lib.AlertsResolvedPath = filepath.Join(lib.AlertsPath, "resolved")
+	lib.AlertsPaths = map[string]string{"firing": lib.AlertsFiringPath, "resolved": lib.AlertsResolvedPath}
 
 	// initialize database
-	c, err = db.Connect(sqliteDB)
-	if err := db.Init(c); err != nil {
+	lib.C, err = db.Connect(lib.SqliteDB)
+	if err := db.Init(lib.C); err != nil {
 		panic(err)
 	}
-	db.Close(c)
-}
-
-func scanFolder(t string) (err error) {
-	// read alert files from disk and save the names to files slice
-	var files []string
-
-	err = filepath.Walk(t, func(fpath string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			files = append(files, fpath)
-		}
-		return nil
-	})
-
-	if err != nil {
-		return err
-	}
-
-	if len(files) == 0 {
-		return err
-	}
-
-	// for every alert populate the map seenFiles make(map[string]*lib.Message)
-	for _, file := range files {
-
-		alert := &lib.Message{}
-
-		jsonFile, err := os.Open(file)
-		// if we os.Open returns an error then panic
-		if err != nil {
-			log.Printf("Error in reading %s: %v\n", file, err)
-			return err
-		}
-		log.Printf("Read %s\n", file)
-
-		d := json.NewDecoder(jsonFile)
-		err = d.Decode(alert)
-		if err != nil {
-			log.Printf("Error in decoding %s: %v\n", file, err)
-			return err
-		}
-		log.Printf("Decoded %s\n", file)
-
-		if filepath.Base(t) == "firing" {
-			// prepare query payload
-			tmpStartsAt := (alert.Alerts[0].StartsAt.UnixNano()) / 1000000
-			t := map[string]string{
-				"starts_hash": fmt.Sprintf("%q", filepath.Base(file)),
-				"starts_at":   strconv.FormatInt(tmpStartsAt, 10),
-				"alertname":   fmt.Sprintf("%q", alert.Alerts[0].Annotations["summary"]),
-				"description": fmt.Sprintf("%q", alert.Alerts[0].Annotations["Description"]),
-				"status":      fmt.Sprintf("%q", "init")}
-
-			mu.Lock()
-			// create connection to database
-			c, err = db.Connect(sqliteDB)
-			if err != nil {
-				mu.Unlock()
-				log.Printf("Error in creating db connection : %v", err)
-				return err
-			}
-
-			// execute the query
-			if err := db.Insert(c, t); err != nil {
-				mu.Unlock()
-				log.Printf("Error in INSERT : %v", err)
-				return err
-			}
-
-			db.Close(c)
-			mu.Unlock()
-			c, t = nil, nil
-			log.Printf("Insert query succeeded\n")
-
-			// delete file from disk
-			if err = os.Remove(file); err != nil {
-				log.Printf("Error in deleting file %s : %v", file, err)
-				panic(err)
-			}
-			log.Printf("Delete succeeded for %s\n", file)
-		} else {
-			// get the alert entry from database
-			mu.Lock()
-			// create connection to database
-			c, err = db.Connect(sqliteDB)
-			if err != nil {
-				mu.Unlock()
-				log.Printf("Error in creating db connection : %v", err)
-				return err
-			}
-
-			t := map[string]string{"starts_hash": fmt.Sprintf("%q", filepath.Base(file))}
-			// execute the query
-			r, err := db.Select(c, t)
-			if err != nil {
-				mu.Unlock()
-				log.Printf("Error in SELECT : %v", err)
-				return err
-			}
-			fmt.Printf("\n%#v", *r)
-		}
-	}
-	return
-}
-
-// Scan routine checks for new alerts from receiver
-func Scan(ch chan<- string) {
-
-	for {
-		// scan for firing alerts
-		if err := scanFolder(alertsPaths["firing"]); err != nil {
-			ch <- fmt.Sprintf("%s", "run")
-			return
-		}
-		time.Sleep(1 * time.Second)
-
-		// scan for resolved alerts
-		if err := scanFolder(alertsPaths["resolved"]); err != nil {
-			ch <- fmt.Sprintf("%s", "run")
-			return
-		}
-		time.Sleep(1 * time.Second)
-	}
-}
-
-// Post creates the grafana region annotation
-func Post(ch chan<- string) {
-	i := 0
-	for {
-		mu.Lock()
-		fmt.Printf("Post: %d\n", i)
-		i++
-		mu.Unlock()
-		if i == 10 {
-			ch <- fmt.Sprintf("%s", "run")
-		}
-		time.Sleep(10 * time.Second)
-	}
-}
-
-// Delete removes annotations older than retention period
-func Delete(ch chan<- string) {
-	i := 0
-	for {
-		mu.Lock()
-		fmt.Printf("Delete: %d\n", i)
-		i++
-		mu.Unlock()
-		if i == 10 {
-			ch <- fmt.Sprintf("%s", "run")
-		}
-		time.Sleep(10 * time.Second)
-	}
+	db.Close(lib.C)
 }
 
 func main() {
 
 	// start prometheus server
-	if config.Server.Settings.Metrics {
-		go serveMetrics()
+	if lib.Config.Server.Settings.Metrics {
+		go lib.ServeMetrics()
 	}
 
-	go Scan(ch)
-	go Post(ch)
-	go Delete(ch)
-	// update annotations
+	go routines.ScanF(lib.Ch)
+	go routines.Post(lib.Ch)
+	go routines.ScanR(lib.Ch)
+	go routines.Update(lib.Ch)
+	//go routines.Delete(lib.Ch)
 	for {
-		res := fmt.Sprintf("%s", <-ch)
+		res := fmt.Sprintf("%s", <-lib.Ch)
 		switch res {
-		case "Scan":
+		case "ScanF":
 			log.Printf("Restarting %s routine", res)
-			go Scan(ch)
+			go routines.ScanF(lib.Ch)
 		case "Post":
 			log.Printf("Restarting %s routine", res)
-			go Post(ch)
+			go routines.Post(lib.Ch)
+		case "ScanR":
+			log.Printf("Restarting %s routine", res)
+			go routines.ScanR(lib.Ch)
+		case "Update":
+			log.Printf("Restarting %s routine", res)
+			go routines.Update(lib.Ch)
 		case "Delete":
 			log.Printf("Restarting %s routine", res)
-			go Delete(ch)
+			go routines.Delete(lib.Ch)
 		}
 	}
 

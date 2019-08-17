@@ -1,12 +1,9 @@
 package main
 
 import (
-	"annotator/lib"
-	"crypto/sha256"
-	"encoding/json"
+	receiver "annotator/receiver/lib"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,73 +12,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-
-// Configuration is a map tha holds application configuration
-type Configuration map[string]string
-
-// config variable for application configuration
-var (
-	config      lib.ReceiverConf
-	configFile  *string
-	alertsPath  string
-	alertsPaths map[string]string
-)
-
-// WriteToFile writes a string to a given path
-func WriteToFile(filename string, data string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = io.WriteString(file, data)
-	if err != nil {
-		return err
-	}
-
-	// Issue a Sync to flush writes to stable storage.
-	return file.Sync()
-}
-
-// storeAlert saves alert json representation to file with name md5256sum(startsAt,groupKey)
-func alertToFile(m *lib.Message) {
-	alertFilename := sha256.Sum256([]byte(m.Alerts[0].StartsAt.String() + m.GroupKey))
-	absPath := filepath.Join(
-		filepath.Join(alertsPaths[m.Alerts[0].Status]),
-		fmt.Sprintf("%x", alertFilename))
-
-	log.Printf("Saving to %s\n", absPath)
-
-	if err := WriteToFile(absPath, m.String()); err != nil {
-		log.Panicf("Error writing to %x: %v", alertFilename, err)
-	}
-}
-
-// getAlert received the json payload from alertmanager and stores it locally
-func getAlert(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s %s %s %s\n", r.Method, r.URL, r.Proto, r.RemoteAddr)
-	switch r.Method {
-	case "POST":
-		// Decode the JSON in the body
-		d := json.NewDecoder(r.Body)
-		defer r.Body.Close()
-
-		alert := &lib.Message{}
-		err := d.Decode(alert)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-
-		log.Printf("\n%s\n", alert)
-		alertToFile(alert)
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "%s", "OK")
-	default:
-		http.Error(w, "Only POST method is allowed", http.StatusInternalServerError)
-	}
-}
 
 func init() {
 	// set logging proeperties
@@ -93,49 +23,50 @@ func init() {
 	log.SetFlags(log.LUTC | log.Lshortfile | log.Lmicroseconds | log.Ltime | log.Ldate)
 
 	// read flags
-	configFile = flag.String("config", "/etc/annotator/annotator.yml", "annotator config file")
+	receiver.ConfigFile = flag.String("config", "/etc/annotator/annotator.yml", "annotator config file")
 	flag.Parse()
 
 	// read configuration
-	log.Printf("Loading configuration from %s\n", *configFile)
-	if err := config.Fread(configFile); err != nil {
-		log.Fatalf("Error in reading configuration file %s: %v", *configFile, err)
+	log.Printf("Loading configuration from %s\n", *(receiver.ConfigFile))
+	if err := receiver.Config.Fread(receiver.ConfigFile); err != nil {
+		log.Fatalf("Error in reading configuration file %s: %v", *(receiver.ConfigFile), err)
 	}
 
 	// check configuration
-	if err := config.Validate(); err != nil {
+	if err := receiver.Config.Validate(); err != nil {
 		log.Fatalf("Configuration checks failed: %v", err)
 	}
 
 	// create data folder
-	alertsPath = config.Receiver.Settings.AlertsPath
-	alertsPaths =
+	receiver.AlertsPath = receiver.Config.Receiver.Settings.AlertsPath
+
+	receiver.AlertsPaths =
 		map[string]string{
-			"firing":   filepath.Join(alertsPath, "firing"),
-			"resolved": filepath.Join(alertsPath, "resolved"),
+			"firing":   filepath.Join(receiver.AlertsPath, "firing"),
+			"resolved": filepath.Join(receiver.AlertsPath, "resolved"),
 		}
 
 	// create alerts path
-	if _, err := os.Stat(alertsPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(alertsPath, 0775); err != nil {
+	if _, err := os.Stat(receiver.AlertsPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(receiver.AlertsPath, 0775); err != nil {
 			log.Fatalf("Configuration error: %s",
-				fmt.Errorf("could not create folder \"%s\"", alertsPath))
+				fmt.Errorf("could not create folder \"%s\"", receiver.AlertsPath))
 		}
 	}
 
 	// create alerts firing path
-	if _, err := os.Stat(alertsPaths["firing"]); os.IsNotExist(err) {
-		if err := os.MkdirAll(alertsPaths["firing"], 0775); err != nil {
+	if _, err := os.Stat(receiver.AlertsPaths["firing"]); os.IsNotExist(err) {
+		if err := os.MkdirAll(receiver.AlertsPaths["firing"], 0775); err != nil {
 			log.Fatalf("Configuration error: %s",
-				fmt.Errorf("could not create folder \"%s\"", alertsPaths["firing"]))
+				fmt.Errorf("could not create folder \"%s\"", receiver.AlertsPaths["firing"]))
 		}
 	}
 
 	// create alerts resolved path
-	if _, err := os.Stat(alertsPaths["resolved"]); os.IsNotExist(err) {
-		if err := os.MkdirAll(alertsPaths["resolved"], 0775); err != nil {
+	if _, err := os.Stat(receiver.AlertsPaths["resolved"]); os.IsNotExist(err) {
+		if err := os.MkdirAll(receiver.AlertsPaths["resolved"], 0775); err != nil {
 			log.Fatalf("Configuration error: %s",
-				fmt.Errorf("could not create folder \"%s\"", alertsPaths["resolved"]))
+				fmt.Errorf("could not create folder \"%s\"", receiver.AlertsPaths["resolved"]))
 		}
 	}
 }
@@ -144,13 +75,14 @@ func main() {
 
 	// start serving requests
 	log.Println("Receiver is ready to get alerts from alertmanager")
-	http.HandleFunc("/", getAlert)
+
+	http.HandleFunc("/", http.HandlerFunc(receiver.GetAlert))
 
 	// expose promtheus metrics
-	if config.Receiver.Settings.Metrics {
-		http.Handle(config.Receiver.Settings.MetricsPath, promhttp.Handler())
+	if receiver.Config.Receiver.Settings.Metrics {
+		http.Handle(receiver.Config.Receiver.Settings.MetricsPath, promhttp.Handler())
 	}
 
 	// start receiver
-	log.Fatal(http.ListenAndServe("0.0.0.0:"+strconv.Itoa(int(config.Receiver.Settings.Port)), nil))
+	log.Fatal(http.ListenAndServe("0.0.0.0:"+strconv.Itoa(int(receiver.Config.Receiver.Settings.Port)), nil))
 }

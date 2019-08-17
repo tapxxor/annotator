@@ -44,7 +44,7 @@ prom/prometheus \
 docker run --name alertmanager -d -p 9093:9093 \
 --restart=always \
 -v $(pwd)/config/:/alertmanager_config \
-prom/alertmanager \
+prom/alertmanager:master \
 --config.file=/alertmanager_config/alertmanager.yml 
 ```
 

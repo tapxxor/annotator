@@ -1,4 +1,4 @@
-package lib
+package types
 
 import (
 	"encoding/json"
@@ -63,4 +63,25 @@ func (r *AnnotationsResponse) Load(u string, k string) (err error) {
 
 	d = nil
 	return
+}
+
+// AnnotationsPost is the paylod used to post an annotation
+type AnnotationsPost struct {
+	Time     int64  `json:"time"`
+	IsRegion bool   `json:"isRegion"`
+	TimeEnd  int64  `json:"timeEnd"`
+	Tags     Tags   `json:"tags"`
+	Text     string `json:"text"`
+}
+
+// AnnotationsPatch is the paylod used to patch an annotation
+type AnnotationsPatch struct {
+	Time int64 `json:"time"`
+}
+
+// AnnotationsMethodResponse is the payload returned after posting/patching an annotation
+type AnnotationsMethodResponse struct {
+	Message string `json:"message"`
+	ID      int64  `json:"id,omitempty"`
+	EndID   int64  `json:"endId,omitempty"`
 }

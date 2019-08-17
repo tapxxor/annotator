@@ -8,17 +8,17 @@ import (
 	_ "github.com/mattn/go-sqlite3" // comment needed for blank import by go lint
 )
 
+// Row is the struct representation of the schema of annotations table
 type Row struct {
-	starts_hash string
-	starts_id   int64
-	starts_at   int64
-	ends_hash   string
-	ends_id     int64
-	ends_at     int64
-	region_id   int64
-	alertname   string
-	description string
-	status      string
+	AlertHash   string
+	StartsID    int64
+	StartsAt    int64
+	EndsID      int64
+	EndsAt      int64
+	RegionID    int64
+	Alertname   string
+	Description string
+	Status      string
 }
 
 // Connect opens a new connection
@@ -42,16 +42,15 @@ func Init(con *sql.DB) (err error) {
 	// create annotations table
 	statement, err := con.Prepare(
 		`CREATE TABLE IF NOT EXISTS annotations (
-			starts_hash TEXT PRIMARY KEY, 
+			alert_hash TEXT PRIMARY KEY, 
 			starts_id  BIGINT DEFAULT 0,
 			starts_at BIGINT DEFAULT 0,
-			ends_hash TEXT DEFAULT NULL,
 			ends_id BIGINT DEFAULT 0,
 			ends_at BIGINT DEFAULT 0,
 			region_id BIGINT DEFAULT 0, 
 			alertname TEXT DEFAULT NULL,
-			description TEXT NULL,
-			status TEXT NOT NULL)`)
+			description TEXT DEFAULT NULL,
+			status TEXT DEFAULT NULL)`)
 
 	statement.Exec()
 
@@ -86,7 +85,7 @@ func Insert(con *sql.DB, vals map[string]string) (err error) {
 	q += strings.Join(values, ",")
 	q += ");"
 
-	fmt.Printf("%s\n", q)
+	//fmt.Printf("%s\n", q)
 	statement, err := con.Prepare(q)
 	if err != nil {
 		return
@@ -97,29 +96,52 @@ func Insert(con *sql.DB, vals map[string]string) (err error) {
 }
 
 // Select row from annotations based on key: val
-func Select(con *sql.DB, vals map[string]string) (*Row, error) {
+func Select(con *sql.DB, vals map[string]string) ([]Row, error) {
 
-	r := &Row{}
-	q := "SELECT starts_hash, alertname, description, status FROM annotations where "
+	var r []Row
+	q := "SELECT alert_hash, starts_id, starts_at, ends_id, ends_at, region_id, alertname, description, status FROM annotations where "
 	for k, v := range vals {
 		q += k
 		q += "="
 		q += v
 	}
-	fmt.Printf("%s\n", q)
+	//fmt.Printf("%s\n", q)
 	rows, err := con.Query(q)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		rows.Scan(&(r.starts_hash), &(r.alertname), &(r.description), &(r.status))
+		tempRow := Row{}
+		rows.Scan(&(tempRow.AlertHash), &(tempRow.StartsID), &(tempRow.StartsAt),
+			&(tempRow.EndsID), &(tempRow.EndsAt),
+			&(tempRow.RegionID), &(tempRow.Alertname), &(tempRow.Description), &(tempRow.Status))
+		r = append(r, tempRow)
 	}
 	return r, nil
 }
 
-// func updateAlert() {
+// UpdateWithHash updates the an entry with starting and ending annotation ids
+func UpdateWithHash(con *sql.DB, vals map[string]string, hash string) (err error) {
+	q := "UPDATE annotations SET "
+	i := 0
+	for k, v := range vals {
+		q += k
+		q += "="
+		q += v
+		if i != len(vals)-1 {
+			q += ","
+		}
+		i++
+	}
+	q += fmt.Sprintf(" WHERE alert_hash = %q;", hash)
+	statement, err := con.Prepare(q)
+	if err != nil {
+		return
+	}
 
-// }
+	statement.Exec()
+	return
+}
 
 // func deleteAlert() {
 
