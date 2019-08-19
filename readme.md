@@ -53,6 +53,26 @@ route:
   group_by: ['...']
 ```
 
+## Prometheus
+
+Sample alert :
+```yaml
+groups:
+- name: Scraping
+  rules:
+  - alert: Instance is down
+    expr: up{job="node_exporter"} == 0
+    for: 10s
+    labels:
+      severity: page
+      for: 10s
+    annotations:
+      summary: Instance is down
+      Description: Job {{ $labels.job }} scraping {{ $labels.instance }} is down
+```
+
+**NOTE** : Label _for_ should be used with units "ms", "s", "m", "h".
+
 ## Sqlite
 
 Alert status is persisted using Sqlite db. Server _init_ function creates a table with name _annotations_
