@@ -72,11 +72,11 @@ and schema :
 
 Alert status can be one of the following:
 
-  * init    : alert has been inserted to db from ScanF routine
-  * firing  : after alert's annotation has been posted to Grafana from Post routine
-  * resolved: alert resolution has been identified from ScanR routine
-  * created : region annotation update time has been updated from Update routine
-  * staled  : region annotation's end time is marked as older than 1 month from Delete routine
+  * **init**    , alert has been inserted to db from ScanF routine
+  * **firing**  , after alert's annotation has been posted to Grafana from Post routine
+  * **resolved**, alert resolution has been identified from ScanR routine
+  * **created** , region annotation update time has been updated from Update routine
+  * **staled**  , region annotation's end time is marked as older than 1 month from Delete routine
 
 
 
