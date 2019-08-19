@@ -4,3 +4,4 @@ bin
 db/annotations.db
 config/prometheus.yml
 config/alertmanager.yml
+rules

@@ -70,11 +70,14 @@ func main() {
 		go lib.ServeMetrics()
 	}
 
+	// start routines
 	go routines.ScanF(lib.Ch)
 	go routines.Post(lib.Ch)
 	go routines.ScanR(lib.Ch)
 	go routines.Update(lib.Ch)
 	go routines.Delete(lib.Ch)
+
+	// restart routines that exited unexpectedly
 	for {
 		res := fmt.Sprintf("%s", <-lib.Ch)
 		switch res {
@@ -97,13 +100,3 @@ func main() {
 	}
 
 }
-
-// grafanaAPIAnnotations.Load(grafanaAPIAnnotationsURL, config.Server.Settings.Apikey)
-
-// update the regions map using grafanaAPIAnnotations contents
-// err = regions.Load(&grafanaAPIAnnotations)
-// if err != nil {
-// 	log.Fatalf("Error in making Regions : %v\n", err)
-// }
-
-// log.Printf("\n%s\n", regions.String())
