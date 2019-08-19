@@ -143,6 +143,38 @@ func UpdateWithHash(con *sql.DB, vals map[string]string, hash string) (err error
 	return
 }
 
-// func deleteAlert() {
+// UpdateWithEndsAt updates the status of a row as obselete if ends_at is older than 1 month
+func UpdateWithEndsAt(con *sql.DB, vals map[string]string) (err error) {
+	q := "UPDATE annotations SET "
+	i := 0
+	for k, v := range vals {
+		q += k
+		q += "="
+		q += v
+		if i != len(vals)-1 {
+			q += ","
+		}
+		i++
+	}
+	q += " where strftime('%Y-%m-%d %H:%M:%f', ends_at/1000, 'unixepoch') < datetime('now','-31 days');"
+	statement, err := con.Prepare(q)
+	if err != nil {
+		return
+	}
 
-// }
+	statement.Exec()
+	return
+}
+
+// DeleteWithHash delete an entry where status matches st
+func DeleteWithHash(con *sql.DB, hash string) (err error) {
+	q := fmt.Sprintf("DELETE FROM annotations WHERE alert_hash = %q;", hash)
+
+	statement, err := con.Prepare(q)
+	if err != nil {
+		return
+	}
+
+	statement.Exec()
+	return
+}
