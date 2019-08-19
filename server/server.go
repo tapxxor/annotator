@@ -2,8 +2,6 @@ package main
 
 import (
 	"annotator/db"
-	"annotator/server/lib"
-	"annotator/server/routines"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +10,9 @@ import (
 	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"annotator/server/lib"
+	"annotator/server/routines"
 )
 
 func init() {
@@ -73,7 +74,7 @@ func main() {
 	go routines.Post(lib.Ch)
 	go routines.ScanR(lib.Ch)
 	go routines.Update(lib.Ch)
-	//go routines.Delete(lib.Ch)
+	go routines.Delete(lib.Ch)
 	for {
 		res := fmt.Sprintf("%s", <-lib.Ch)
 		switch res {
