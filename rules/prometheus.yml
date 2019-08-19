@@ -2,10 +2,11 @@ groups:
 - name: Scraping
   rules:
   - alert: Instance is down
-    expr: up == 0
+    expr: up{job="node_exporter"} == 0
     for: 10s
     labels:
       severity: page
+      for: 10s
     annotations:
       summary: Instance is down
       Description: Job {{ $labels.job }} scraping {{ $labels.instance }} is down
