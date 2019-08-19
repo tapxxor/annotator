@@ -2,7 +2,6 @@ package routines
 
 import (
 	"annotator/db"
-	"annotator/server/lib"
 	"annotator/types"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
+
+	"annotator/server/lib"
 )
 
 // ScanF routine checks for new alerts from receiver
@@ -48,6 +50,13 @@ func ScanF(ch chan<- string) {
 
 			// prepare query payload
 			tmpStartsAt := (alert.Alerts[0].StartsAt.UnixNano()) / 1000000
+
+			evalPeriod := alert.Alerts[0].Labels["for"]
+			evalPeriodDur, err := time.ParseDuration(evalPeriod)
+			if err == nil {
+				tmpStartsAt -= int64(evalPeriodDur / time.Millisecond)
+			}
+
 			t := map[string]string{
 				"alert_hash":  fmt.Sprintf("%q", filepath.Base(file)),
 				"starts_at":   strconv.FormatInt(tmpStartsAt, 10),

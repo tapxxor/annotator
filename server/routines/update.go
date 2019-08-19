@@ -2,7 +2,6 @@ package routines
 
 import (
 	"annotator/db"
-	"annotator/server/lib"
 	"annotator/types"
 	"bytes"
 	"encoding/json"
@@ -11,6 +10,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"annotator/server/lib"
 )
 
 // Update Updates the grafana region annotation with end timestamp

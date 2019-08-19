@@ -2,7 +2,6 @@ package routines
 
 import (
 	"annotator/db"
-	"annotator/server/lib"
 	"annotator/types"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
+
+	"annotator/server/lib"
 )
 
 // ScanR routine checks for resolved alerts from receiver
@@ -47,6 +49,13 @@ func ScanR(ch chan<- string) {
 			log.Printf("%s : Decoded JSON\n", filepath.Base(file))
 
 			tmpEndsAt := (alert.Alerts[0].EndsAt.UnixNano()) / 1000000
+
+			evalPeriod := alert.Alerts[0].Labels["for"]
+			evalPeriodDur, err := time.ParseDuration(evalPeriod)
+			if err == nil {
+				tmpEndsAt -= int64(evalPeriodDur / time.Millisecond)
+			}
+
 			t := map[string]string{
 				"ends_at": strconv.FormatInt(tmpEndsAt, 10),
 				"status":  "'resolved'"}

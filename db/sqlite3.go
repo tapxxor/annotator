@@ -156,7 +156,7 @@ func UpdateWithEndsAt(con *sql.DB, vals map[string]string) (err error) {
 		}
 		i++
 	}
-	q += " where strftime('%Y-%m-%d %H:%M:%f', ends_at/1000, 'unixepoch') < datetime('now','-31 days');"
+	q += " where strftime('%Y-%m-%d %H:%M:%f', ends_at/1000, 'unixepoch') < datetime('now','-31 days') and ends_at!=0;"
 	statement, err := con.Prepare(q)
 	if err != nil {
 		return
