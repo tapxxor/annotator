@@ -30,7 +30,22 @@ Annotator consists of two modules the receiver and the server.
 cd annotator/receiver
 go run receiver.go --config=../config/annotator.yml
 ```
-### Run with docker
+
+or 
+
+```bash
+TODO
+```
+
+## Server
+
+```bash
+cd annotator/server
+go run server.go --config=../config/annotator.yml
+```
+
+or
+
 ```bash
 TODO
 ```
